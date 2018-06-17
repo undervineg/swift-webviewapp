@@ -11,8 +11,13 @@ import WebKit
 
 class ViewController: UIViewController, WKNavigationDelegate {
 
-    private var webView = WKWebView()
-    private let url = URL(string: "https://m.baeminchan.com")!
+    private var webView: WKWebView!
+
+    struct Constant {
+        static let urlString = "https://m.baeminchan.com"
+        static let js
+            = "var p = document.querySelector('.app-download-popup'); if(p != null) { p.style.display = 'none'; }"
+    }
 
     // MARK:- Life Cycle
 
@@ -24,14 +29,23 @@ class ViewController: UIViewController, WKNavigationDelegate {
         self.init()
     }
 
+    override func loadView() {
+        super.loadView()
+        let config = WKWebViewConfiguration()
+        config.userContentController = WKUserContentController()
+        let script = WKUserScript(source: Constant.js, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        config.userContentController.addUserScript(script)
+        webView = WKWebView(frame: .zero, configuration: config)
+        self.view.addSubview(webView)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        self.view.addSubview(webView)
         self.view.setNeedsUpdateConstraints() // updateViewConstraints() 강제호출 -> 오토레이아웃 초기화
 
         webView.navigationDelegate = self
-        webView.load(URLRequest(url: url))
+        let urlRequest = URLRequest(url: URL(string: Constant.urlString)!)
+        webView.load(urlRequest)
     }
 
 
@@ -73,17 +87,17 @@ class ViewController: UIViewController, WKNavigationDelegate {
 
     // MARK:- UI
 
-    private var didUpdateViewConstraints = false
+    private var hasLoadedConstraints = false
 
     override func updateViewConstraints() {
         // 최초 한 번만 업데이트
-        if !didUpdateViewConstraints {
+        if !hasLoadedConstraints {
             webView.translatesAutoresizingMaskIntoConstraints = false
             webView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor).isActive = true
             webView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor).isActive = true
             webView.topAnchor.constraint(equalTo: self.view.topAnchor).isActive = true
             webView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor).isActive = true
-            didUpdateViewConstraints = true
+            hasLoadedConstraints = true
         }
         super.updateViewConstraints()
     }
