@@ -8,16 +8,23 @@
 
 import UIKit
 import WebKit
+import SafariServices
 
 class ViewController: UIViewController, WKNavigationDelegate {
 
-    private var webView: WKWebView!
+    private weak var webView: WKWebView!
 
     struct Constant {
-        static let urlString = "https://m.baeminchan.com"
-        static let js
-            = "var p = document.querySelector('.app-download-popup'); if(p != null) { p.style.display = 'none'; }"
+        static let jsFileName = "JSInjection"
+        static let jsType = "js"
+        static let jsEventName = "slideNavi"
     }
+
+    enum RequestPath: String {
+        case main = "https://m.baeminchan.com"
+        case search = "/search.php"
+    }
+
 
     // MARK:- Life Cycle
 
@@ -31,21 +38,15 @@ class ViewController: UIViewController, WKNavigationDelegate {
 
     override func loadView() {
         super.loadView()
-        let config = WKWebViewConfiguration()
-        config.userContentController = WKUserContentController()
-        let script = WKUserScript(source: Constant.js, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
-        config.userContentController.addUserScript(script)
-        webView = WKWebView(frame: .zero, configuration: config)
-        self.view.addSubview(webView)
+        setupWebView()
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.view.setNeedsUpdateConstraints() // updateViewConstraints() 강제호출 -> 오토레이아웃 초기화
+        self.view.setNeedsUpdateConstraints()
 
         webView.navigationDelegate = self
-        let urlRequest = URLRequest(url: URL(string: Constant.urlString)!)
-        webView.load(urlRequest)
+        webView.load(URLRequest(url: URL(string: RequestPath.main.rawValue)!))
     }
 
 
@@ -54,7 +55,24 @@ class ViewController: UIViewController, WKNavigationDelegate {
     // 1 - 페이지 로딩 시 링크 이벤트
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
 
-        decisionHandler(.allow)
+        if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url {
+            decisionHandler(.cancel)
+            switch url.path {
+            case RequestPath.search.rawValue: presentSafariViewController(url)
+            default: break
+            }
+        } else {
+            decisionHandler(.allow)
+        }
+
+    }
+
+    private func presentSafariViewController(_ url: URL) {
+        let config = SFSafariViewController.Configuration()
+        config.barCollapsingEnabled = true
+        let safariController = SFSafariViewController(url: url, configuration: config)
+        safariController.delegate = self
+        self.present(safariController, animated: true, completion: nil)
     }
 
     // 2
@@ -87,6 +105,19 @@ class ViewController: UIViewController, WKNavigationDelegate {
 
     // MARK:- UI
 
+    private func setupWebView() {
+        guard
+            let bundle = Bundle.main.path(forResource: Constant.jsFileName, ofType: Constant.jsType),
+            let content = try? String(contentsOfFile: bundle, encoding: .utf8) else { return }
+        let config = WKWebViewConfiguration()
+        config.userContentController = WKUserContentController()
+        let script = WKUserScript(source: content, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        config.userContentController.addUserScript(script)
+        config.userContentController.add(self, name: Constant.jsEventName)
+        webView = WKWebView(frame: .zero, configuration: config)
+        self.view.addSubview(webView)
+    }
+
     private var hasLoadedConstraints = false
 
     override func updateViewConstraints() {
@@ -105,3 +136,34 @@ class ViewController: UIViewController, WKNavigationDelegate {
 
 }
 
+extension ViewController: SFSafariViewControllerDelegate {
+    func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+        self.dismiss(animated: true, completion: nil)
+    }
+}
+
+extension ViewController: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == Constant.jsEventName {
+            if let body = message.body as? String,
+                let jsonObject = body.parseToJSON() {
+                print("Message from JS: ", jsonObject)
+            }
+        }
+    }
+
+}
+
+extension String {
+    func parseToJSON() -> Any? {
+        var result: Any?
+        if let data = self.data(using: .utf8, allowLossyConversion: false) {
+            do {
+                result = try JSONSerialization.jsonObject(with: data, options: .mutableContainers)
+            } catch {
+                print(error)
+            }
+        }
+        return result
+    }
+}
